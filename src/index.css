@@ -1,0 +1,74 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  html {
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+  }
+  body {
+    @apply bg-ink-50 text-ink-900 font-sans antialiased;
+    text-rendering: optimizeLegibility;
+  }
+  * {
+    @apply border-ink-200;
+  }
+}
+
+@layer components {
+  .card {
+    @apply rounded-2xl bg-white border border-ink-200 shadow-card;
+  }
+  .btn {
+    @apply inline-flex items-center justify-center gap-2 rounded-xl px-4 py-2.5 text-sm font-semibold transition-all duration-150 disabled:opacity-50 disabled:cursor-not-allowed;
+  }
+  .btn-primary {
+    @apply btn bg-brand-600 text-white hover:bg-brand-700 active:scale-[0.98] shadow-sm;
+  }
+  .btn-secondary {
+    @apply btn bg-white text-ink-700 border border-ink-200 hover:bg-ink-50 active:scale-[0.98];
+  }
+  .btn-danger {
+    @apply btn bg-rose-600 text-white hover:bg-rose-700 active:scale-[0.98];
+  }
+  .btn-ghost {
+    @apply btn text-ink-600 hover:bg-ink-100;
+  }
+  .input {
+    @apply w-full rounded-xl border border-ink-200 bg-white px-3.5 py-2.5 text-sm text-ink-900 placeholder-ink-400 outline-none transition focus:border-brand-500 focus:ring-2 focus:ring-brand-100;
+  }
+  .label {
+    @apply block text-sm font-medium text-ink-700 mb-1.5;
+  }
+  .badge {
+    @apply inline-flex items-center gap-1 rounded-full px-2.5 py-0.5 text-xs font-medium;
+  }
+}
+
+@layer utilities {
+  .scrollbar-thin::-webkit-scrollbar { width: 6px; height: 6px; }
+  .scrollbar-thin::-webkit-scrollbar-thumb { @apply bg-ink-300 rounded-full; }
+  .scrollbar-thin::-webkit-scrollbar-track { background: transparent; }
+  .auth-input-wrap { @apply relative transition-all duration-200; }
+  .auth-input-wrap:focus-within .auth-input-icon { @apply text-brand-600; }
+  .auth-input-wrap:focus-within { @apply -translate-y-px; }
+  .auth-stagger-1 { animation: slideUp 0.5s cubic-bezier(0.16, 1, 0.3, 1) 0.05s both; }
+  .auth-stagger-2 { animation: slideUp 0.5s cubic-bezier(0.16, 1, 0.3, 1) 0.10s both; }
+  .auth-stagger-3 { animation: slideUp 0.5s cubic-bezier(0.16, 1, 0.3, 1) 0.15s both; }
+  .auth-stagger-4 { animation: slideUp 0.5s cubic-bezier(0.16, 1, 0.3, 1) 0.20s both; }
+  .auth-stagger-5 { animation: slideUp 0.5s cubic-bezier(0.16, 1, 0.3, 1) 0.25s both; }
+  .auth-stagger-6 { animation: slideUp 0.5s cubic-bezier(0.16, 1, 0.3, 1) 0.30s both; }
+  .auth-stagger-7 { animation: slideUp 0.5s cubic-bezier(0.16, 1, 0.3, 1) 0.35s both; }
+  .shimmer-text {
+    background: linear-gradient(90deg, #1c83f5 0%, #59c0ff 30%, #1c83f5 60%);
+    background-size: 200% auto;
+    -webkit-background-clip: text; background-clip: text; -webkit-text-fill-color: transparent;
+    animation: shimmer 3s linear infinite;
+  }
+  .auth-gradient-bg {
+    background: linear-gradient(135deg, #142d57 0%, #1854b6 40%, #1c83f5 100%);
+    background-size: 200% 200%;
+    animation: gradientShift 8s ease infinite;
+  }
+}

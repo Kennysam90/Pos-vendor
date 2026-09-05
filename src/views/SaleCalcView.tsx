@@ -1,11 +1,10 @@
 import { useState, useEffect, useMemo } from 'react'
 import {
   ShoppingCart, Plus, Trash2, Search, Loader2, Package,
-  Receipt, Copy, CheckCircle, ArrowRight, Store,
+  Copy, CheckCircle, ArrowRight, Store, Edit2, X,
 } from 'lucide-react'
 import { supabase } from '../lib/supabase'
 import { toast } from '../components/Toast'
-import { Modal } from '../components/Modal'
 import { EmptyState } from '../components/EmptyState'
 import type { Product, InvoiceItem, Invoice } from '../lib/types'
 import { INVOICE_STATUS_META } from '../lib/types'
@@ -31,14 +30,17 @@ export function SaleCalcView(_: Props) {
   const [cart, setCart] = useState<CartItem[]>([])
   const [customerName, setCustomerName] = useState('')
   const [customerPhone, setCustomerPhone] = useState('')
-  const [accountName] = useState('')
-  const [bankName] = useState('Opay')
+  const [accountName, setAccountName] = useState('')
+  const [bankName, setBankName] = useState('Opay')
   const [accountNumber, setAccountNumber] = useState(genAccountNumber())
   const [generating, setGenerating] = useState(false)
-  const [activeInvoice, setActiveInvoice] = useState<Invoice | null>(null)
+  const [lastSale, setLastSale] = useState<Invoice | null>(null)
   const [recentInvoices, setRecentInvoices] = useState<Invoice[]>([])
   const [loadingInvoices, setLoadingInvoices] = useState(true)
-  const [showAddProduct, setShowAddProduct] = useState(false)
+
+  // inline product form
+  const [showProductForm, setShowProductForm] = useState(false)
+  const [editingProductId, setEditingProductId] = useState<string | null>(null)
   const [productForm, setProductForm] = useState({ name: '', price: '', stock: '', category: '' })
   const [savingProduct, setSavingProduct] = useState(false)
 
@@ -90,21 +92,48 @@ export function SaleCalcView(_: Props) {
 
   const removeFromCart = (idx: number) => setCart(cart.filter((_, i) => i !== idx))
 
-  const handleAddProduct = async () => {
+  const startEditProduct = (p: Product) => {
+    setEditingProductId(p.id)
+    setProductForm({ name: p.name, price: String(p.price), stock: String(p.stock), category: p.category ?? '' })
+    setShowProductForm(true)
+  }
+
+  const resetProductForm = () => {
+    setShowProductForm(false)
+    setEditingProductId(null)
+    setProductForm({ name: '', price: '', stock: '', category: '' })
+  }
+
+  const handleSaveProduct = async () => {
     if (!productForm.name.trim()) { toast('error', 'Product name is required'); return }
     if (!productForm.price || Number(productForm.price) <= 0) { toast('error', 'Enter a valid price'); return }
     setSavingProduct(true)
-    const { error } = await supabase.from('products').insert({
+    const payload = {
       name: productForm.name.trim(),
       price: Number(productForm.price),
       stock: Number(productForm.stock) || 0,
       category: productForm.category.trim() || null,
-    })
-    setSavingProduct(false)
+    }
+    if (editingProductId) {
+      const { error } = await supabase.from('products').update(payload).eq('id', editingProductId)
+      setSavingProduct(false)
+      if (error) { toast('error', error.message); return }
+      toast('success', 'Product updated')
+    } else {
+      const { error } = await supabase.from('products').insert(payload)
+      setSavingProduct(false)
+      if (error) { toast('error', error.message); return }
+      toast('success', 'Product added')
+    }
+    resetProductForm()
+    loadProducts()
+  }
+
+  const deleteProduct = async (id: string) => {
+    if (!confirm('Delete this product?')) return
+    const { error } = await supabase.from('products').delete().eq('id', id)
     if (error) { toast('error', error.message); return }
-    toast('success', 'Product added')
-    setShowAddProduct(false)
-    setProductForm({ name: '', price: '', stock: '', category: '' })
+    toast('success', 'Product deleted')
     loadProducts()
   }
 
@@ -129,7 +158,7 @@ export function SaleCalcView(_: Props) {
     setGenerating(false)
     if (error) { toast('error', error.message); return }
     const inv = data as Invoice
-    setActiveInvoice(inv)
+    setLastSale(inv)
     setRecentInvoices([inv, ...recentInvoices])
     setCart([])
     setCustomerName('')
@@ -161,217 +190,246 @@ export function SaleCalcView(_: Props) {
     }
 
     toast('success', `${formatNaira(Number(inv.total))} added to wallet`)
-    if (activeInvoice?.id === inv.id) setActiveInvoice({ ...inv, status: 'paid', paid_at: new Date().toISOString() })
-    setRecentInvoices(recentInvoices.map((r) => r.id === inv.id ? { ...r, status: 'paid' as const, paid_at: new Date().toISOString() } : r))
+    const updated = { ...inv, status: 'paid' as const, paid_at: new Date().toISOString() }
+    if (lastSale?.id === inv.id) setLastSale(updated)
+    setRecentInvoices(recentInvoices.map((r) => r.id === inv.id ? updated : r))
     loadProducts()
   }
 
-  const copyAccount = () => {
-    navigator.clipboard.writeText(accountNumber)
-    toast('success', 'Account number copied')
+  const copyText = (text: string, label: string) => {
+    navigator.clipboard.writeText(text)
+    toast('success', `${label} copied`)
   }
 
   return (
     <div className="space-y-6">
-      <div className="flex items-center justify-between flex-wrap gap-3">
-        <div>
-          <h1 className="text-2xl font-bold text-ink-900">Sales Calculator</h1>
-          <p className="text-sm text-ink-500 mt-1">List products, calculate total, generate an account number for your customer to pay.</p>
-        </div>
-        <button onClick={() => setShowAddProduct(true)} className="btn-secondary">
-          <Plus size={16} /> Add Product
-        </button>
+      <div>
+        <h1 className="text-2xl font-bold text-ink-900">Sales Calculator</h1>
+        <p className="text-sm text-ink-500 mt-1">List products, calculate total, generate an account number for your customer to pay.</p>
       </div>
 
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-        {/* Product list */}
-        <div className="lg:col-span-2 space-y-4">
-          <div className="card p-4">
-            <div className="relative mb-3">
-              <Search size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-ink-400" />
-              <input
-                className="input pl-9"
-                placeholder="Search products..."
-                value={search}
-                onChange={(e) => setSearch(e.target.value)}
-              />
-            </div>
-
-            {loadingProducts ? (
-              <div className="flex items-center justify-center py-12">
-                <Loader2 size={24} className="animate-spin text-brand-500" />
-              </div>
-            ) : filtered.length === 0 ? (
-              <EmptyState
-                icon={<Package size={22} />}
-                title="No products yet"
-                message="Add products to your shop so you can start generating sales."
-                action={<button onClick={() => setShowAddProduct(true)} className="btn-primary"><Plus size={16} /> Add Product</button>}
-              />
-            ) : (
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                {filtered.map((p) => (
-                  <button
-                    key={p.id}
-                    onClick={() => addToCart(p)}
-                    disabled={p.stock <= 0}
-                    className="card p-3 text-left hover:ring-2 hover:ring-brand-300 transition-all disabled:opacity-50 disabled:cursor-not-allowed group"
-                  >
-                    <div className="flex items-start justify-between gap-2">
-                      <div className="min-w-0">
-                        <p className="text-sm font-semibold text-ink-900 truncate">{p.name}</p>
-                        {p.category && <p className="text-xs text-ink-400">{p.category}</p>}
-                      </div>
-                      <div className="shrink-0 w-8 h-8 rounded-lg bg-brand-50 text-brand-600 flex items-center justify-center group-hover:bg-brand-100 transition-colors">
-                        <Plus size={16} />
-                      </div>
-                    </div>
-                    <div className="flex items-center justify-between mt-2">
-                      <p className="text-lg font-bold text-ink-900">{formatNaira(Number(p.price))}</p>
-                      <span className={`text-xs font-medium ${p.stock > 0 ? 'text-emerald-600' : 'text-rose-600'}`}>
-                        {p.stock > 0 ? `${p.stock} in stock` : 'Out of stock'}
-                      </span>
-                    </div>
-                  </button>
-                ))}
-              </div>
-            )}
+      {/* Products section */}
+      <div className="card p-4">
+        <div className="flex items-center justify-between gap-3 mb-3 flex-wrap">
+          <div className="relative flex-1 min-w-[180px]">
+            <Search size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-ink-400" />
+            <input className="input pl-9" placeholder="Search products..." value={search} onChange={(e) => setSearch(e.target.value)} />
           </div>
+          <button onClick={() => { resetProductForm(); setShowProductForm(true) }} className="btn-primary whitespace-nowrap">
+            <Plus size={16} /> Add Product
+          </button>
         </div>
 
-        {/* Cart & checkout */}
-        <div className="space-y-4">
-          <div className="card p-4 sticky top-4">
-            <div className="flex items-center gap-2 mb-3">
-              <ShoppingCart size={18} className="text-brand-600" />
-              <h3 className="text-sm font-bold text-ink-900">Cart</h3>
-              {cart.length > 0 && <span className="badge bg-brand-50 text-brand-700 ml-auto">{cart.length} items</span>}
+        {/* Inline product form */}
+        {showProductForm && (
+          <div className="rounded-xl border border-brand-200 bg-brand-50/50 p-4 mb-3 space-y-3">
+            <div className="flex items-center justify-between">
+              <p className="text-sm font-semibold text-ink-800">{editingProductId ? 'Edit Product' : 'New Product'}</p>
+              <button onClick={resetProductForm} className="text-ink-400 hover:text-ink-600"><X size={16} /></button>
             </div>
-
-            {cart.length === 0 ? (
-              <p className="text-sm text-ink-400 text-center py-8">Tap products to add them here</p>
-            ) : (
-              <div className="space-y-2">
-                {cart.map((item, i) => (
-                  <div key={i} className="flex items-center gap-2 rounded-lg bg-ink-50 p-2">
-                    <div className="min-w-0 flex-1">
-                      <p className="text-sm font-medium text-ink-900 truncate">{item.name}</p>
-                      <p className="text-xs text-ink-400">{formatNaira(item.price)}</p>
-                    </div>
-                    <div className="flex items-center gap-1 shrink-0">
-                      <button onClick={() => updateQty(i, -1)} className="w-6 h-6 rounded bg-white text-ink-600 hover:bg-ink-100 flex items-center justify-center text-sm font-bold">−</button>
-                      <span className="w-6 text-center text-sm font-semibold text-ink-900">{item.quantity}</span>
-                      <button onClick={() => updateQty(i, 1)} className="w-6 h-6 rounded bg-white text-ink-600 hover:bg-ink-100 flex items-center justify-center text-sm font-bold">+</button>
-                    </div>
-                    <p className="text-sm font-bold text-ink-900 shrink-0 w-16 text-right">{formatNaira(item.price * item.quantity)}</p>
-                    <button onClick={() => removeFromCart(i)} className="text-rose-500 hover:text-rose-700 shrink-0"><Trash2 size={14} /></button>
-                  </div>
-                ))}
-              </div>
-            )}
-
-            <div className="border-t border-ink-100 mt-3 pt-3">
-              <div className="flex items-center justify-between mb-3">
-                <span className="text-sm text-ink-500">Total</span>
-                <span className="text-xl font-bold text-ink-900">{formatNaira(cartTotal)}</span>
-              </div>
-
-              <div className="space-y-2">
-                <div className="grid grid-cols-2 gap-2">
-                  <input className="input text-xs" placeholder="Customer name" value={customerName} onChange={(e) => setCustomerName(e.target.value)} />
-                  <input className="input text-xs" placeholder="Phone (optional)" value={customerPhone} onChange={(e) => setCustomerPhone(e.target.value)} />
-                </div>
-              </div>
-
-              <button
-                onClick={generateSale}
-                disabled={cart.length === 0 || generating}
-                className="btn-primary w-full mt-3"
-              >
-                {generating ? <Loader2 size={16} className="animate-spin" /> : <><Receipt size={16} /> Generate Account Number</>}
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+              <input className="input" placeholder="Product name" value={productForm.name} onChange={(e) => setProductForm({ ...productForm, name: e.target.value })} />
+              <input className="input" placeholder="Category (optional)" value={productForm.category} onChange={(e) => setProductForm({ ...productForm, category: e.target.value })} />
+              <input className="input" type="number" min="0" placeholder="Price (₦)" value={productForm.price} onChange={(e) => setProductForm({ ...productForm, price: e.target.value })} />
+              <input className="input" type="number" min="0" placeholder="Stock quantity" value={productForm.stock} onChange={(e) => setProductForm({ ...productForm, stock: e.target.value })} />
+            </div>
+            <div className="flex justify-end gap-2">
+              <button onClick={resetProductForm} className="btn-secondary">Cancel</button>
+              <button onClick={handleSaveProduct} disabled={savingProduct} className="btn-primary">
+                {savingProduct ? <Loader2 size={16} className="animate-spin" /> : <Plus size={16} />} {editingProductId ? 'Update' : 'Add'} Product
               </button>
             </div>
           </div>
+        )}
+
+        {loadingProducts ? (
+          <div className="flex items-center justify-center py-12"><Loader2 size={24} className="animate-spin text-brand-500" /></div>
+        ) : filtered.length === 0 ? (
+          <EmptyState
+            icon={<Package size={22} />}
+            title="No products yet"
+            message="Add products to your shop so you can start generating sales."
+            action={<button onClick={() => { resetProductForm(); setShowProductForm(true) }} className="btn-primary"><Plus size={16} /> Add Product</button>}
+          />
+        ) : (
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
+            {filtered.map((p) => (
+              <div key={p.id} className="card p-3 group">
+                <div className="flex items-start justify-between gap-2">
+                  <div className="min-w-0 flex-1">
+                    <p className="text-sm font-semibold text-ink-900 truncate">{p.name}</p>
+                    {p.category && <p className="text-xs text-ink-400">{p.category}</p>}
+                  </div>
+                  <div className="flex items-center gap-1 shrink-0 opacity-0 group-hover:opacity-100 transition-opacity">
+                    <button onClick={() => startEditProduct(p)} className="text-ink-400 hover:text-brand-600 p-1"><Edit2 size={13} /></button>
+                    <button onClick={() => deleteProduct(p.id)} className="text-ink-400 hover:text-rose-600 p-1"><Trash2 size={13} /></button>
+                  </div>
+                </div>
+                <div className="flex items-center justify-between mt-2">
+                  <p className="text-lg font-bold text-ink-900">{formatNaira(Number(p.price))}</p>
+                  <span className={`text-xs font-medium ${p.stock > 0 ? 'text-emerald-600' : 'text-rose-600'}`}>
+                    {p.stock > 0 ? `${p.stock} in stock` : 'Out of stock'}
+                  </span>
+                </div>
+                <button
+                  onClick={() => addToCart(p)}
+                  disabled={p.stock <= 0}
+                  className="btn-secondary w-full mt-2 !py-1.5 disabled:opacity-50 disabled:cursor-not-allowed"
+                >
+                  <Plus size={14} /> Add to cart
+                </button>
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
+
+      {/* Cart + checkout inline */}
+      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+        <div className="lg:col-span-2 card p-4">
+          <div className="flex items-center gap-2 mb-3">
+            <ShoppingCart size={18} className="text-brand-600" />
+            <h3 className="text-sm font-bold text-ink-900">Cart</h3>
+            {cart.length > 0 && <span className="badge bg-brand-50 text-brand-700 ml-auto">{cart.length} items</span>}
+          </div>
+
+          {cart.length === 0 ? (
+            <p className="text-sm text-ink-400 text-center py-8">Tap "Add to cart" on any product above</p>
+          ) : (
+            <div className="space-y-2">
+              {cart.map((item, i) => (
+                <div key={i} className="flex items-center gap-2 rounded-lg bg-ink-50 p-2">
+                  <div className="min-w-0 flex-1">
+                    <p className="text-sm font-medium text-ink-900 truncate">{item.name}</p>
+                    <p className="text-xs text-ink-400">{formatNaira(item.price)}</p>
+                  </div>
+                  <div className="flex items-center gap-1 shrink-0">
+                    <button onClick={() => updateQty(i, -1)} className="w-6 h-6 rounded bg-white text-ink-600 hover:bg-ink-100 flex items-center justify-center text-sm font-bold">−</button>
+                    <span className="w-6 text-center text-sm font-semibold text-ink-900">{item.quantity}</span>
+                    <button onClick={() => updateQty(i, 1)} className="w-6 h-6 rounded bg-white text-ink-600 hover:bg-ink-100 flex items-center justify-center text-sm font-bold">+</button>
+                  </div>
+                  <p className="text-sm font-bold text-ink-900 shrink-0 w-16 text-right">{formatNaira(item.price * item.quantity)}</p>
+                  <button onClick={() => removeFromCart(i)} className="text-rose-500 hover:text-rose-700 shrink-0"><Trash2 size={14} /></button>
+                </div>
+              ))}
+            </div>
+          )}
+
+          {cart.length > 0 && (
+            <div className="border-t border-ink-100 mt-3 pt-3 flex items-center justify-between">
+              <span className="text-sm text-ink-500">Total</span>
+              <span className="text-xl font-bold text-ink-900">{formatNaira(cartTotal)}</span>
+            </div>
+          )}
+        </div>
+
+        {/* Checkout details */}
+        <div className="card p-4 space-y-3">
+          <h3 className="text-sm font-bold text-ink-900">Checkout Details</h3>
+          <div className="grid grid-cols-2 gap-2">
+            <input className="input text-xs" placeholder="Customer name" value={customerName} onChange={(e) => setCustomerName(e.target.value)} />
+            <input className="input text-xs" placeholder="Phone (optional)" value={customerPhone} onChange={(e) => setCustomerPhone(e.target.value)} />
+          </div>
+          <div>
+            <label className="label">Account Name</label>
+            <input className="input text-xs" placeholder="e.g. John Doe" value={accountName} onChange={(e) => setAccountName(e.target.value)} />
+          </div>
+          <div className="grid grid-cols-2 gap-2">
+            <div>
+              <label className="label">Bank</label>
+              <input className="input text-xs" placeholder="Bank name" value={bankName} onChange={(e) => setBankName(e.target.value)} />
+            </div>
+            <div>
+              <label className="label">Account No.</label>
+              <div className="flex gap-1">
+                <input className="input text-xs font-mono" value={accountNumber} onChange={(e) => setAccountNumber(e.target.value)} />
+                <button onClick={() => setAccountNumber(genAccountNumber())} className="btn-ghost px-2 text-brand-600" title="Generate new"><ArrowRight size={14} /></button>
+              </div>
+            </div>
+          </div>
+          <button onClick={generateSale} disabled={cart.length === 0 || generating} className="btn-primary w-full">
+            {generating ? <Loader2 size={16} className="animate-spin" /> : <><CheckCircle size={16} /> Generate Sale — {formatNaira(cartTotal)}</>}
+          </button>
         </div>
       </div>
 
-      {/* Payment details modal */}
-      {activeInvoice && (
-        <Modal open={!!activeInvoice} onClose={() => setActiveInvoice(null)} title="Payment Details">
-          <div className="space-y-4">
-            {activeInvoice.status === 'paid' ? (
-              <div className="rounded-xl bg-emerald-50 border border-emerald-200 p-4 flex items-center gap-3">
-                <div className="w-10 h-10 rounded-full bg-emerald-100 text-emerald-600 flex items-center justify-center">
-                  <CheckCircle size={22} />
-                </div>
-                <div>
-                  <p className="text-sm font-bold text-emerald-800">Payment Received</p>
-                  <p className="text-xs text-emerald-600">{formatNaira(Number(activeInvoice.total))} added to your wallet</p>
-                </div>
-              </div>
+      {/* Last sale / payment details inline */}
+      {lastSale && (
+        <div className="card p-5 space-y-4">
+          <div className="flex items-center justify-between flex-wrap gap-2">
+            <h3 className="text-sm font-bold text-ink-900">Payment Details — {lastSale.reference}</h3>
+            {lastSale.status === 'paid' ? (
+              <span className="badge bg-emerald-50 text-emerald-700">Paid</span>
             ) : (
-              <div className="rounded-xl bg-amber-50 border border-amber-200 p-4 flex items-center gap-3">
-                <div className="w-10 h-10 rounded-full bg-amber-100 text-amber-600 flex items-center justify-center">
-                  <Receipt size={22} />
-                </div>
-                <div>
-                  <p className="text-sm font-bold text-amber-800">Awaiting Payment</p>
-                  <p className="text-xs text-amber-600">Share the account number below with your customer</p>
-                </div>
-              </div>
-            )}
-
-            <div className="rounded-xl bg-ink-50 p-4 space-y-3">
-              <div className="text-center">
-                <p className="text-xs text-ink-400 mb-1">Account Number</p>
-                <div className="flex items-center justify-center gap-2">
-                  <p className="text-2xl font-bold text-ink-900 font-mono tracking-wider">{activeInvoice.account_number}</p>
-                  <button onClick={copyAccount} className="text-brand-600 hover:text-brand-700"><Copy size={16} /></button>
-                </div>
-                <p className="text-sm text-ink-600 mt-1">{activeInvoice.account_name}</p>
-                <p className="text-xs text-ink-400">{activeInvoice.bank_name}</p>
-              </div>
-
-              <div className="border-t border-ink-200 pt-3">
-                <p className="text-xs text-ink-400 mb-1">Amount to Pay</p>
-                <p className="text-2xl font-bold text-brand-700">{formatNaira(Number(activeInvoice.total))}</p>
-              </div>
-
-              <div className="border-t border-ink-200 pt-3 space-y-1">
-                <p className="text-xs text-ink-400">Items</p>
-                {activeInvoice.items.map((item, i) => (
-                  <div key={i} className="flex justify-between text-sm">
-                    <span className="text-ink-700">{item.name} × {item.quantity}</span>
-                    <span className="text-ink-900 font-medium">{formatNaira(item.price * item.quantity)}</span>
-                  </div>
-                ))}
-              </div>
-
-              {activeInvoice.customer_name && (
-                <div className="border-t border-ink-200 pt-3">
-                  <p className="text-xs text-ink-400">Customer</p>
-                  <p className="text-sm text-ink-700">{activeInvoice.customer_name}{activeInvoice.customer_phone ? ` · ${activeInvoice.customer_phone}` : ''}</p>
-                </div>
-              )}
-
-              <p className="text-xs text-ink-400 font-mono text-center pt-1">Ref: {activeInvoice.reference}</p>
-            </div>
-
-            {activeInvoice.status === 'pending' ? (
-              <div className="flex gap-2">
-                <button onClick={() => setActiveInvoice(null)} className="btn-secondary flex-1">Close</button>
-                <button onClick={() => markPaid(activeInvoice)} className="btn-primary flex-1">
-                  <CheckCircle size={16} /> Mark as Paid
-                </button>
-              </div>
-            ) : (
-              <button onClick={() => setActiveInvoice(null)} className="btn-primary w-full">Done</button>
+              <span className="badge bg-amber-50 text-amber-700">Awaiting Payment</span>
             )}
           </div>
-        </Modal>
+
+          {lastSale.status === 'paid' ? (
+            <div className="rounded-xl bg-emerald-50 border border-emerald-200 p-4 flex items-center gap-3">
+              <div className="w-10 h-10 rounded-full bg-emerald-100 text-emerald-600 flex items-center justify-center">
+                <CheckCircle size={22} />
+              </div>
+              <div>
+                <p className="text-sm font-bold text-emerald-800">Payment Received</p>
+                <p className="text-xs text-emerald-600">{formatNaira(Number(lastSale.total))} added to your wallet</p>
+              </div>
+            </div>
+          ) : (
+            <div className="rounded-xl bg-amber-50 border border-amber-200 p-4 flex items-center gap-3">
+              <div className="w-10 h-10 rounded-full bg-amber-100 text-amber-600 flex items-center justify-center">
+                <ShoppingCart size={22} />
+              </div>
+              <div>
+                <p className="text-sm font-bold text-amber-800">Awaiting Payment</p>
+                <p className="text-xs text-amber-600">Share the account number below with your customer</p>
+              </div>
+            </div>
+          )}
+
+          <div className="rounded-xl bg-ink-50 p-4 space-y-3">
+            <div className="text-center">
+              <p className="text-xs text-ink-400 mb-1">Account Number</p>
+              <div className="flex items-center justify-center gap-2">
+                <p className="text-2xl font-bold text-ink-900 font-mono tracking-wider">{lastSale.account_number}</p>
+                <button onClick={() => copyText(lastSale.account_number, 'Account number')} className="text-brand-600 hover:text-brand-700"><Copy size={16} /></button>
+              </div>
+              <p className="text-sm text-ink-600 mt-1">{lastSale.account_name}</p>
+              <p className="text-xs text-ink-400">{lastSale.bank_name}</p>
+            </div>
+
+            <div className="border-t border-ink-200 pt-3">
+              <p className="text-xs text-ink-400 mb-1">Amount to Pay</p>
+              <p className="text-2xl font-bold text-brand-700">{formatNaira(Number(lastSale.total))}</p>
+            </div>
+
+            <div className="border-t border-ink-200 pt-3 space-y-1">
+              <p className="text-xs text-ink-400">Items</p>
+              {lastSale.items.map((item, i) => (
+                <div key={i} className="flex justify-between text-sm">
+                  <span className="text-ink-700">{item.name} × {item.quantity}</span>
+                  <span className="text-ink-900 font-medium">{formatNaira(item.price * item.quantity)}</span>
+                </div>
+              ))}
+            </div>
+
+            {lastSale.customer_name && (
+              <div className="border-t border-ink-200 pt-3">
+                <p className="text-xs text-ink-400">Customer</p>
+                <p className="text-sm text-ink-700">{lastSale.customer_name}{lastSale.customer_phone ? ` · ${lastSale.customer_phone}` : ''}</p>
+              </div>
+            )}
+          </div>
+
+          {lastSale.status === 'pending' && (
+            <button onClick={() => markPaid(lastSale)} className="btn-primary w-full">
+              <CheckCircle size={16} /> Mark as Paid — {formatNaira(Number(lastSale.total))} to Wallet
+            </button>
+          )}
+        </div>
       )}
 
-      {/* Recent sales */}
+      {/* Recent sales inline */}
       <div className="card p-4">
         <div className="flex items-center gap-2 mb-3">
           <Store size={18} className="text-brand-600" />
@@ -411,36 +469,6 @@ export function SaleCalcView(_: Props) {
           </div>
         )}
       </div>
-
-      {/* Add product modal */}
-      <Modal open={showAddProduct} onClose={() => setShowAddProduct(false)} title="Add Product">
-        <div className="space-y-4">
-          <div>
-            <label className="label">Product Name</label>
-            <input className="input" placeholder="e.g. Indomie Carton" value={productForm.name} onChange={(e) => setProductForm({ ...productForm, name: e.target.value })} />
-          </div>
-          <div className="grid grid-cols-2 gap-4">
-            <div>
-              <label className="label">Price (₦)</label>
-              <input className="input" type="number" min="0" placeholder="0" value={productForm.price} onChange={(e) => setProductForm({ ...productForm, price: e.target.value })} />
-            </div>
-            <div>
-              <label className="label">Stock Quantity</label>
-              <input className="input" type="number" min="0" placeholder="0" value={productForm.stock} onChange={(e) => setProductForm({ ...productForm, stock: e.target.value })} />
-            </div>
-          </div>
-          <div>
-            <label className="label">Category (optional)</label>
-            <input className="input" placeholder="e.g. Food, Drinks, Toiletries" value={productForm.category} onChange={(e) => setProductForm({ ...productForm, category: e.target.value })} />
-          </div>
-          <div className="flex justify-end gap-2 pt-2">
-            <button onClick={() => setShowAddProduct(false)} className="btn-secondary">Cancel</button>
-            <button onClick={handleAddProduct} disabled={savingProduct} className="btn-primary">
-              {savingProduct ? <Loader2 size={16} className="animate-spin" /> : <Plus size={16} />} Add Product
-            </button>
-          </div>
-        </div>
-      </Modal>
     </div>
   )
 }

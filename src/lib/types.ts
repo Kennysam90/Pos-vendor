@@ -150,6 +150,15 @@ export interface Invoice {
   paid_at: string | null
 }
 
+export interface Product {
+  id: string
+  name: string
+  price: number
+  stock: number
+  category: string | null
+  created_at: string
+}
+
 export type WalletEntryType = 'payment_received' | 'withdrawal' | 'adjustment'
 
 export interface WalletEntry {

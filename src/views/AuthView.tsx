@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import {
   CreditCard, Mail, Lock, User as UserIcon, ArrowRight, ArrowLeft, Loader2,
   Eye, EyeOff, CheckCircle2, ShieldCheck, TrendingUp, Wallet, Zap,
@@ -307,10 +307,10 @@ function OtpPending({ email, onBack, onAuthed }: { email: string; onBack: () => 
     }
   }
 
-  // Auto-check when session changes (e.g. after email link redirect)
-  if (session?.user) {
-    onAuthed()
-  }
+  // Auto-detect when session becomes available (e.g. after email link redirect)
+  useEffect(() => {
+    if (session?.user) onAuthed()
+  }, [session, onAuthed])
 
   const handleResend = async () => {
     setResendDisabled(true)

@@ -24,7 +24,6 @@ import { ReportsView } from './views/ReportsView'
 import { AuthView } from './views/AuthView'
 import { ProfileView } from './views/ProfileView'
 import { PoliciesView } from './views/PoliciesView'
-import { NotFoundView } from './views/NotFoundView'
 import { Loading } from './components/Loading'
 import { ToastContainer, toast } from './components/Toast'
 

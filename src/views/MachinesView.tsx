@@ -1,6 +1,6 @@
 import { useState } from 'react'
 import {
-  CreditCard, Plus, Pencil, Trash2, Loader2, MapPin, SimCard, Hash,
+  CreditCard, Plus, Pencil, Trash2, Loader2, MapPin, Smartphone, Hash,
 } from 'lucide-react'
 import { supabase } from '../lib/supabase'
 import { toast } from '../components/Toast'
@@ -9,7 +9,7 @@ import { EmptyState } from '../components/EmptyState'
 import type { Stats } from '../lib/usePosData'
 import type { Machine, MachineStatus } from '../lib/types'
 import { PROVIDERS } from '../lib/types'
-import { formatNaira, formatDate } from '../lib/format'
+import { formatNaira } from '../lib/format'
 
 interface Props {
   data: Stats
@@ -127,7 +127,7 @@ export function MachinesView({ data }: Props) {
                   <p className="text-ink-500 flex items-center gap-2"><Hash size={13} className="text-ink-300" /> {m.serial_number}</p>
                   {m.terminal_id && <p className="text-ink-500 flex items-center gap-2"><CreditCard size={13} className="text-ink-300" /> {m.terminal_id}</p>}
                   {m.location && <p className="text-ink-500 flex items-center gap-2"><MapPin size={13} className="text-ink-300" /> {m.location}</p>}
-                  {m.sim_number && <p className="text-ink-500 flex items-center gap-2"><SimCard size={13} className="text-ink-300" /> {m.sim_number}</p>}
+                  {m.sim_number && <p className="text-ink-500 flex items-center gap-2"><Smartphone size={13} className="text-ink-300" /> {m.sim_number}</p>}
                 </div>
                 <div className="mt-4 pt-3 border-t border-ink-50 flex items-center justify-between">
                   <div>

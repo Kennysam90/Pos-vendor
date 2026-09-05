@@ -1,5 +1,4 @@
 import { useEffect, useState } from 'react'
-import { ChevronLeft, ChevronRight } from 'lucide-react'
 
 interface Advert { title: string; message: string; color: string }
 
